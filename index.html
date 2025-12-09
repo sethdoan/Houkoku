@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>2026年安全大会　－　抽選会 (V39)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@900&family=Roboto:wght@400;700&family=Noto+Sans+JP:wght@900&display=swap" rel="stylesheet">
+    <script src="xlsx.full.min.js"></script> 
+    <style>
+        /* --- 1. スロットのバックグラウンド --- */
+        body {
+            background-color: #000;
+            background-image: radial-gradient(circle, #000000 0%, #000000 100%);
+            margin: 0; height: 100vh; overflow: hidden;
+            font-family: 'Roboto', 'Noto Sans JP', sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            /* [V36] iPadでテキスト選択を防止 */
+            user-select: none; -webkit-user-select: none;
+        }
+
+        /* --- 初期設定の画面 --- */
+        #landing-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.95); z-index: 20000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 15px;
+            transition: opacity 1s; pointer-events: all;
+        }
+        
+        .setup-group {
+            display: flex; flex-direction: column; gap: 15px; width: 400px;
+            background: rgba(0, 247, 255, 0.05); padding: 30px; border-radius: 20px;
+            border: 1px solid rgba(0, 247, 255, 0.3);
+        }
+
+        .btn-setup {
+            font-family: 'Noto Sans JP', sans-serif; font-size: 14px;
+            background: rgba(0, 0, 0, 0.8); color: #00f7ff;
+            border: 1px solid #00f7ff; padding: 12px 20px;
+            cursor: pointer; border-radius: 8px; transition: 0.3s;
+            text-align: center; text-transform: uppercase; display: block;
+        }
+        .btn-setup:hover { background: #00f7ff; color: #000; }
+        .btn-setup.connected { background: rgba(0, 255, 0, 0.2); color: #00ff00; border-color: #00ff00; }
+
+        .btn-start-game {
+            margin-top: 20px;
+            font-family: 'Orbitron', sans-serif; font-size: 3vh; font-weight: bold;
+            color: #fff; background: linear-gradient(45deg, #00f7ff, #0051ff);
+            border: none; padding: 20px 60px; border-radius: 50px;
+            cursor: pointer; transition: all 0.3s; 
+            box-shadow: 0 0 30px rgba(0, 247, 255, 0.5);
+        }
+        .btn-start-game:hover { transform: scale(1.1); box-shadow: 0 0 60px rgba(0, 247, 255, 0.8); }
+
+        /* スロット画面でボタンを隠す */
+        #input-excel-guests, #input-excel-prizes, #input-intro-landing, #input-video-ending { display: none; }
+
+        /* --- スロットの背景エフェクト --- */
+        .sunburst-container {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 200vmax; height: 200vmax; z-index: 0; pointer-events: none;
+            mask-image: radial-gradient(circle, rgba(0,0,0,1) 10%, rgba(0,0,0,0) 60%);
+            -webkit-mask-image: radial-gradient(circle, rgba(0,0,0,1) 10%, rgba(0,0,0,0) 60%);
+        }
+        .sunburst-rays {
+            width: 100%; height: 100%;
+            background: repeating-conic-gradient(from 0deg, rgba(122, 100, 5, 0.18) 0deg, rgba(122, 100, 5, 0.18) 10deg, transparent 10deg, transparent 20deg);
+            animation: rotate-rays 45s linear infinite;
+        }
+        @keyframes rotate-rays { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        #video-intro {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            object-fit: cover; background: #000; z-index: 15000; display: none;
+        }
+
+        /* --- スロットの設定 --- */
+        #main-ui-container 
+        {
+            width: 100%; height: 100%; display: flex; justify-content: center; align-items: center;
+            opacity: 0; pointer-events: none; transition: opacity 2s ease-in;
+        }
+
+        #main-ui-container.visible { opacity: 1 !important; pointer-events: all !important; }
+
+        #cabinet-column 
+        {
+            width: 60vh; max-width: 50vw; 
+            display: flex; flex-direction: column; align-items: center;
+            position: relative; filter: drop-shadow(0 0 30px rgba(255, 239, 66, 0.5));
+            z-index: 10;
+        }
+
+        .part-img { display: block; width: 100%; height: auto; }
+        .top-wrapper { width: 100%; position: relative; z-index: 10; margin-top: -30px; }
+        .screen-wrapper { position: relative; z-index: 5; width: 100%; margin-left: 0%; margin-top: 60px; }
+        .bottom-wrapper { width: 100%; position: relative; z-index: 10; margin-top: 60px; }
+
+        #lever-container { position: absolute; top: 15%; right: -12%; width: 12%; height: 60%; z-index: 15; }
+        .lever-sprite { position: absolute; left: 0; width: 100%; height: auto; opacity: 0; transition: opacity 0.05s; }
+        .lever-sprite.active { opacity: 1; }
+        #lever-up { top: 0; z-index: 1; }
+        #lever-down { top: 90px; z-index: 2; }
+
+        #main-slot-container {
+            position: absolute; top: 47%; left: 47.4%; transform: translate(-50%, -50%);
+            width: 85%; height: 77.5%; z-index: 20;
+        }
+        #main-slot {
+            width: 105%; height: 105%; background: #ffffff; border: 3px solid #ff9f1000;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; container-type: inline-size;
+        }
+        #main-slot .name { 
+            font-size: 10cqw; color: #ffc21c; font-weight: bold; line-height: 1.5;
+            -webkit-text-stroke: 2px #ff0000; paint-order: stroke fill;
+        }
+        #main-slot .company { font-size: 8cqw; color: #585858; margin-top: 5px; }
+
+        .footer-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center; z-index: 20;
+        }
+        h1 { font-family: 'Orbitron', sans-serif; color: #fff; font-size: 3.5vh; margin: 0; text-shadow: 0 0 10px #ffef3b; text-align: center; }
+
+        .hud-sidebar {
+            position: fixed; top: 5vh; bottom: 5vh; width: 22vw;
+            background: rgba(0, 10, 20, 0.6);
+            border: 2px solid rgba(221, 255, 0, 0.3); border-radius: 15px; padding: 10px;
+            display: flex; flex-direction: column; gap: 5px;
+            overflow-y: auto; z-index: 20;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5); 
+        }
+        #sidebar-left { left: 2vw; border-right: 4px solid #eeff004c; }
+        #sidebar-right { right: 2vw; border-left: 4px solid #eeff004c; }
+        .list-header { color: #f2ff00d3; font-family: 'Orbitron', sans-serif; text-align: center; font-size: 3.5vh; margin-bottom: 10px; border-bottom: 1px solid #eeff00a3; padding-bottom: 5px; }
+        .list-item { display: flex; flex-direction: column; align-items: flex-start; padding: 15px 10px; background: linear-gradient(90deg, transparent, #ffea9750, transparent); border-bottom: 1px solid #ffffff1a; animation: slideIn 0.5s ease-out; }
+        .list-item .l-name { font-size: 3.5vh; font-weight: bold; color: #ffc21c; margin-bottom: 5px; line-height: 1.2; }
+        .list-item .l-comp { font-size: 2.0vh; color: #ffffff; font-style: normal; }
+
+        @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+        .rolling-blur { filter: blur(4px); opacity: 0.8; }
+        .flash-winner { animation: flashEffect 0.5s; background: #fff !important; }
+        .flash-winner .name { color: #ffb300 !important; } 
+        @keyframes flashEffect { 10% { transform: scale(1); } 50% { transform: scale(1.1); background: #fff; } 100% { transform: scale(1); } }
+        
+        #end-screen 
+        {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; justify-content: center; align-items: center; flex-direction: column; z-index: 50;
+        }
+
+        .end-text 
+        {
+            font-family: 'Noto Sans JP', sans-serif; font-size: 20vh; font-weight: 900; color: #fff;
+            text-shadow: 0 0 20px #ff00de, 0 0 50px #ff00de, 0 0 100px #ff00de;
+            animation: pulseText 2s infinite ease-in-out;
+        }
+
+        @keyframes pulseText 
+        {
+            0%, 100% { transform: scale(1); text-shadow: 0 0 20px #ff00de, 0 0 50px #ff00de; }
+            50% { transform: scale(1.05); text-shadow: 0 0 40px #ff00de, 0 0 80px #ff00de, 0 0 120px #fff; }
+        }
+        
+        #btn-export 
+        {
+            margin-top: 50px; padding: 15px 30px; font-size: 2vh; font-family: 'Orbitron', sans-serif;
+            background: #000; color: #00ff00; border: 2px solid #00ff00; border-radius: 10px;
+            cursor: pointer; transition: 0.3s; z-index: 60;
+        }
+        
+        #btn-export:hover { background: #00ff00; color: #000; }
+
+        #toolbar { display: none !important; }
+
+        #confetti-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 100; }
+        ::-webkit-scrollbar { width: 2px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: #ffdd00d0; border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+    <div id="landing-screen">
+        <h1 style="font-size: 5vh; margin-bottom: 10px; text-shadow: 0 0 20px cyan;">初期設定</h1>
+        
+        <div class="setup-group">
+            <label class="btn-setup" for="input-intro-landing" id="btn-intro-videos">🎬 1. オープニング動画</label>
+            <input type="file" id="input-intro-landing" accept="video/*" multiple onchange="loadIntroVideos(this)">
+
+            <label class="btn-setup" for="input-excel-guests" id="btn-guests">📂 2. お客様リスト</label>
+            <input type="file" id="input-excel-guests" accept=".xlsx, .xls" onchange="loadExcelGuests(this)">
+
+            <label class="btn-setup" for="input-excel-prizes" id="btn-prizes">📂 3. 賞リスト</label>
+            <input type="file" id="input-excel-prizes" accept=".xlsx, .xls" onchange="loadExcelPrizes(this)">
+
+            <label class="btn-setup" for="input-video-ending" id="btn-video-ending">🎬 4. エンディング動画</label>
+            <input type="file" id="input-video-ending" accept="video/*" onchange="loadEndingVideo(this)">
+
+            <button class="btn-setup" id="btn-dropbox" onclick="connectToDropbox()">🔗 5. 当選フォルダー</button>
+        </div>
+
+        <button class="btn-start-game" onclick="startGameFlow()">抽選スタート ▶</button>
+    </div>
+
+    <div class="sunburst-container"><div class="sunburst-rays"></div></div>
+    <video id="video-intro"></video>
+    <canvas id="confetti-canvas"></canvas>
+    
+    <div id="end-screen">
+        <div class="end-text">終了</div>
+        <button id="btn-export" onclick="exportResultsToExcel()">📥 全ての結果をダウンロード</button>　</div>
+
+    <div id="main-ui-container">
+        <div id="sidebar-left" class="hud-sidebar">
+            <div class="list-header">当選リスト</div>
+            <div id="list-content-left"></div>
+        </div>
+
+        <div id="cabinet-column">
+            <div class="top-wrapper"><img src="bg-top.png" class="part-img" alt="Top"></div>
+            <div class="screen-wrapper">
+                <img src="bg-screen.png" class="part-img" alt="Screen">
+                <div id="lever-container">
+                    <img src="lever_up.png" id="lever-up" class="lever-sprite active" alt="Up">
+                    <img src="lever_down.png" id="lever-down" class="lever-sprite" alt="Down">
+                </div>
+                <div id="main-slot-container">
+                    <div id="main-slot">
+                        <div class="name">少々お待ちください</div>
+                        <div class="company"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="bottom-wrapper">
+                <img src="bg-bottom.png" class="part-img" alt="Bottom">
+                <div class="footer-overlay"><h1 id="round-title"></h1></div>
+            </div>
+        </div>
+
+        <div id="sidebar-right" class="hud-sidebar">
+            <div class="list-header">当選リスト</div>
+            <div id="list-content-right"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- 全体的な変数 ---
+        let DS_KHACH_MOI = []; 
+        let CO_CAU_GIAI_THUONG = []; 
+        let introVideoQueue = []; 
+        let endingVideoFile = null; 
+        let FINAL_RESULTS = [];     
+
+        let currentRound = 0; 
+        let appState = 'setup_mode'; 
+        
+        let intervalId; let revealTimeout; let fakeSpinId; let stepTimeout;
+        let winnersHistory = []; let currentRoundWinners = [];
+        let dropboxHandle = null;
+        let revealIndex = 0;
+
+        const uiTitle = document.getElementById('round-title');
+        const uiListLeft = document.getElementById('list-content-left');
+        const uiListRight = document.getElementById('list-content-right');
+        const uiMainSlot = document.getElementById('main-slot');
+        const uiVideo = document.getElementById('video-intro');
+
+        // --- [V39] iPadのタッチ対応 (FIXED: エクセルダウンロードループ防止) ---
+        document.addEventListener('click', function(e) {
+            // 設定画面では無効
+            if (appState === 'setup_mode') return;
+
+            // ボタンをクリックした場合は無視
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+
+            // [重要] プログラムによる自動クリック（エクセルダウンロードなど）は無視する
+            // これがないと、エクセル保存時に勝手に次のラウンドに進んでしまいます
+            if (!e.isTrusted) return; 
+
+            // それ以外はエンターと同じ処理
+            handleMainAction('progress');
+        });
+
+        // --- ボタンを処理 (PC用) ---
+        document.addEventListener('keydown', function(e) 
+        {
+            if (appState === 'setup_mode') return; 
+
+            // エンター/スペースボタン: プロセス
+            if (e.key === "Enter" || e.code === "Space") 
+            {
+                e.preventDefault(); 
+                if (document.activeElement && document.activeElement.tagName !== 'BODY') document.activeElement.blur();
+                handleMainAction('progress');
+            }
+
+            // S　ボタン: スキップ
+            if (e.key.toLowerCase() === 's') 
+            {
+                e.preventDefault(); 
+                handleMainAction('skip');
+            }
+        });
+
+        // ================= 起動ロジック =================
+        function startGameFlow() 
+        {
+            if (DS_KHACH_MOI.length === 0 || CO_CAU_GIAI_THUONG.length === 0) 
+            {
+                alert("先にデータをお選びください!");
+                return;
+            }
+
+            // [V38] 安全のため、ラウンドを強制的にリセット
+            currentRound = 0; 
+            
+            document.getElementById('landing-screen').style.display = 'none';
+            document.getElementById('main-ui-container').classList.add('visible');
+
+            if (introVideoQueue.length > 0) 
+            {
+                playNextIntroSequence();
+            } 
+            else 
+            {
+                appState = 'data_loaded';
+                // [V36] 動画がない場合も自動スタート
+                setTimeout(() => { handleMainAction('progress'); }, 500);
+            }
+        }
+
+        // ================= ストリームコントロールロジック =================
+        function handleMainAction(actionType) 
+        {
+            
+            // --- プロセス枝 (ENTER / TAP) ---
+            if (actionType === 'progress') 
+            {
+                switch(appState) 
+                {
+                    case 'playing_intro_seq':   playNextIntroSequence(); break;
+                    case 'data_loaded':     playPrizeVideo(); break;
+                    case 'playing_video':   showPrizeInfo(); break;
+                    case 'rolling':         stopRollingAndReveal(); break;
+                    case 'revealing':       break; 
+                    case 'stopped':         
+                        exportCurrentRoundExcel(); 
+                        prepareNextRound(); 
+                        break;
+                    case 'playing_ending_video': showEndScreen(); break;
+                    case 'finished':        fireConfetti(); break;
+                }
+            }
+
+            // --- スキップ枝 (S) ---
+            if (actionType === 'skip') 
+            {
+                switch(appState) 
+                {
+                    case 'playing_intro_seq':   playNextIntroSequence(); break;
+                    case 'playing_video':       showPrizeInfo(); break;
+                    case 'revealing':           finishRevealInstantly(); break; 
+                    case 'playing_ending_video': showEndScreen(); break;
+                }
+            }
+        }
+
+        // ================= 賞の動画ロジック & 自動引っ張る =================
+        function playPrizeVideo() 
+        {
+            appState = 'playing_video'; 
+            const config = CO_CAU_GIAI_THUONG[currentRound];
+            if (config.videoIntro && config.videoIntro !== "") 
+            {
+                uiVideo.src = config.videoIntro; uiVideo.style.display = 'block'; 
+                uiVideo.currentTime = 0; uiVideo.play().catch(e => showPrizeInfo());
+                uiVideo.onended = function() { }; // エンター/タップを待つ
+            } 
+            else { showPrizeInfo(); }
+        }
+
+        function showPrizeInfo() 
+        {
+            uiVideo.pause(); uiVideo.style.display = 'none';
+            const config = CO_CAU_GIAI_THUONG[currentRound];
+            
+            uiTitle.innerHTML = `${config.tenGiai}<br><span style="font-size: 0.7em;">(${config.soLuong} 名)</span>`;
+            uiMainSlot.innerHTML = `<div class="name" style="font-size: 10cqw; color: #ff0000;">READY?</div>
+                                    <div class="company">${config.soLuong} PRIZES</div>`;
+            
+            appState = 'auto_starting'; 
+            setTimeout(() => 
+            {
+                pullLeverDown();
+                startRolling();
+            }, 500); 
+        }
+
+        // =================　回すロジック　=================
+        function startRolling() 
+        {
+            appState = 'rolling'; 
+            const config = CO_CAU_GIAI_THUONG[currentRound]; 
+            const candidates = DS_KHACH_MOI.filter(p => !winnersHistory.includes(p));
+            
+            if (candidates.length < config.soLuong) 
+            { 
+                alert("名簿が足りません！"); pushLeverUp(); appState = 'stopped'; return; 
+            }
+            uiMainSlot.classList.add('rolling-blur');
+            intervalId = setInterval(() => 
+            {
+                const pool = candidates.length > 0 ? candidates : DS_KHACH_MOI;
+                if(pool.length > 0) 
+                {
+                    const randomPerson = pool[Math.floor(Math.random() * pool.length)];
+                    updateMainSlot(randomPerson);
+                }
+            }, 50);
+        }
+
+        function stopRollingAndReveal() 
+        {
+            clearInterval(intervalId);
+            const config = CO_CAU_GIAI_THUONG[currentRound];
+            const candidates = DS_KHACH_MOI.filter(p => !winnersHistory.includes(p));
+            currentRoundWinners = getRandomItems(candidates, config.soLuong);
+            currentRoundWinners.forEach(w => winnersHistory.push(w));
+            
+            appState = 'revealing'; 
+            revealIndex = 0; 
+            processRevealStep();
+        }
+
+        function processRevealStep() 
+        {
+            if (appState !== 'revealing') return;
+            if (revealIndex >= currentRoundWinners.length) { finishReveal(); return; }
+            
+            const winner = currentRoundWinners[revealIndex];
+            
+            uiMainSlot.classList.remove('rolling-blur'); 
+            updateMainSlot(winner);
+            uiMainSlot.classList.add('flash-winner'); 
+            setTimeout(() => uiMainSlot.classList.remove('flash-winner'), 400);
+            
+            const parts = winner.split(" - ");
+            const currentPrizeName = CO_CAU_GIAI_THUONG[currentRound].tenGiai;
+            
+            if (!FINAL_RESULTS.some(r => r["Họ Tên"] === parts[0] && r["Giải Thưởng"] === currentPrizeName)) 
+            {
+                saveWinnerToTxt(parts[0], parts[1]||"", revealIndex);
+                FINAL_RESULTS.push({ "Giải Thưởng": currentPrizeName, "Họ Tên": parts[0], "Công Ty": parts[1] || "" });
+            }
+
+            revealTimeout = setTimeout(() => 
+            {
+                addToSideList(winner, revealIndex);
+                revealIndex++; 
+
+                if (revealIndex < currentRoundWinners.length) 
+                {
+                     uiMainSlot.classList.add('rolling-blur');
+                     fakeSpinId = setInterval(() => 
+                     {
+                         const candidates = DS_KHACH_MOI.filter(p => !winnersHistory.includes(p)); 
+                         const pool = candidates.length > 0 ? candidates : DS_KHACH_MOI;
+                         if(pool.length > 0) updateMainSlot(pool[Math.floor(Math.random() * pool.length)]);
+                     }, 50);
+                     stepTimeout = setTimeout(() => { clearInterval(fakeSpinId); processRevealStep(); }, 500);
+                } 
+                else { finishReveal();　}
+            }, 3500); 
+        }
+
+        function finishRevealInstantly() 
+        {
+            clearTimeout(revealTimeout); clearTimeout(stepTimeout); clearInterval(fakeSpinId);
+            uiMainSlot.classList.remove('rolling-blur');
+            const currentPrizeName = CO_CAU_GIAI_THUONG[currentRound].tenGiai;
+
+            if (revealIndex < currentRoundWinners.length) {
+                addToSideList(currentRoundWinners[revealIndex], revealIndex);
+            }
+
+            for (let i = revealIndex + 1; i < currentRoundWinners.length; i++) { 
+                const w = currentRoundWinners[i];
+                addToSideList(w, i);
+                const parts = w.split(" - ");
+                if (!FINAL_RESULTS.some(r => r["Họ Tên"] === parts[0] && r["Giải Thưởng"] === currentPrizeName)) {
+                    saveWinnerToTxt(parts[0], parts[1]||"", i);
+                    FINAL_RESULTS.push({ "Giải Thưởng": currentPrizeName, "Họ Tên": parts[0], "Công Ty": parts[1] || "" });
+                }
+            }
+            if (currentRoundWinners.length > 0) updateMainSlot(currentRoundWinners[currentRoundWinners.length - 1]);
+            finishReveal();
+        }
+
+        function finishReveal() 
+        {
+            appState = 'stopped'; 
+            uiMainSlot.classList.remove('rolling-blur'); uiMainSlot.classList.add('flash-winner');
+        }
+
+        // ================= 他のロジック =================
+        function loadIntroVideos(input) {
+            if (input.files && input.files.length > 0) {
+                introVideoQueue = Array.from(input.files).sort((a, b) => a.name.localeCompare(b.name));
+                document.getElementById('btn-intro-videos').classList.add('connected');
+                document.getElementById('btn-intro-videos').innerText = "✅ オープニング動画OK！";
+            }
+        }
+        function playNextIntroSequence() {
+            if (introVideoQueue.length === 0) {
+                showMainInterface(); 
+                return;
+            }
+            appState = 'playing_intro_seq';
+            const videoURL = URL.createObjectURL(introVideoQueue.shift());
+            uiVideo.src = videoURL; uiVideo.style.display = 'block';
+            uiVideo.play().catch(e => { });
+            uiVideo.onended = function() { }; 
+        }
+        function skipIntroSequence() { playNextIntroSequence(); }
+
+        // [V36] 自動遷移機能の統合
+        function showMainInterface() {
+            uiVideo.style.display = 'none'; uiVideo.src = "";
+            
+            if (DS_KHACH_MOI.length > 0 && CO_CAU_GIAI_THUONG.length > 0) {
+                appState = 'data_loaded'; 
+                uiMainSlot.innerHTML = `<div class="name" style="font-size: 8cqw">データOK！</div><div class="company">少々お待ちください...</div>`;
+                
+                // [FIXED] 動画終了後、0.5秒で自動スタート
+                setTimeout(() => {
+                    handleMainAction('progress');
+                }, 500); 
+
+            } else {
+                appState = 'waiting_data'; 
+            }
+
+            document.getElementById('landing-screen').style.display = 'none';
+            document.getElementById('main-ui-container').classList.add('visible');
+        }
+
+        function loadExcelGuests(input) {
+            const file = input.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1});
+                    DS_KHACH_MOI = [];
+                    for (let i = 1; i < jsonData.length; i++) { if (jsonData[i][0]) DS_KHACH_MOI.push(`${jsonData[i][0]} - ${jsonData[i][1] || ""}`); }
+                    if (DS_KHACH_MOI.length > 0) {
+                        const btn = document.getElementById('btn-guests'); 
+                        if(btn) 
+                        { 
+                            btn.innerText = `✅  ${DS_KHACH_MOI.length} 人をロードしました！`; 
+                            btn.classList.add('connected'); 
+                        }
+                    }
+                } catch (err) { alert("Error reading guests: " + err.message); }
+                input.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function loadExcelPrizes(input) 
+        {
+            const file = input.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {header: 1});
+                    if (!jsonData || jsonData.length <= 1) { alert("Empty Excel!"); return; }
+                    CO_CAU_GIAI_THUONG = [];
+                    // [V38] 最初の行はヘッダー（タイトル）としてスキップします
+                    for (let i = 1; i < jsonData.length; i++) {
+                        if (jsonData[i][0]) CO_CAU_GIAI_THUONG.push({ tenGiai: jsonData[i][0], soLuong: parseInt(jsonData[i][1]) || 1, videoIntro: jsonData[i][2] || "" });
+                    }
+                    if (CO_CAU_GIAI_THUONG.length > 0) {
+                        const btn = document.getElementById('btn-prizes');
+                        // [V38] 賞の数を確認するためのアラート
+                        // alert(`読み込まれた賞の数: ${CO_CAU_GIAI_THUONG.length}`);
+                        if (btn) { btn.innerText = `✅  ${CO_CAU_GIAI_THUONG.length} 賞をロードしました！`; btn.classList.add('connected'); }
+                    }
+                } catch (err) { alert("Error reading prizes: " + err.message); }
+                input.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        function loadEndingVideo(input) {
+            if (input.files && input.files.length > 0) {
+                endingVideoFile = input.files[0];
+                document.getElementById('btn-video-ending').classList.add('connected');
+                document.getElementById('btn-video-ending').innerText = "✅ エンディング動画OK！";
+            }
+        }
+
+        // 次の賞 & 終了画面
+        function prepareNextRound() {
+            pushLeverUp(); 
+            currentRound++;
+            
+            // [V38 Logic Check]
+            if (currentRound >= CO_CAU_GIAI_THUONG.length) { 
+                playEndingVideo(); 
+            } else {
+                uiTitle.innerText = ""; uiMainSlot.innerHTML = `<div class="name">NEXT</div>`;
+                uiListLeft.innerHTML = ""; uiListRight.innerHTML = "";
+                appState = 'data_loaded'; 
+            }
+        }
+        function playEndingVideo() {
+            if (endingVideoFile) {
+                appState = 'playing_ending_video';
+                const videoURL = URL.createObjectURL(endingVideoFile);
+                uiVideo.src = videoURL; uiVideo.style.display = 'block'; uiVideo.currentTime = 0;
+                uiVideo.play().catch(e => showEndScreen());
+                uiVideo.onended = function() { }; // エンターを押したら処理
+            } else { showEndScreen(); }
+        }
+        function showEndScreen() {
+            uiVideo.pause(); uiVideo.style.display = 'none'; 
+            appState = 'finished';
+            document.getElementById('main-ui-container').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('main-ui-container').style.display = 'none';
+                document.getElementById('end-screen').style.display = 'flex';
+                fireConfetti(); setInterval(fireConfetti, 2500);
+            }, 500);
+        }
+
+        function cleanFileName(str) {
+            
+            return str.replace(/[\\/:*?"<>|]/g, "_");
+        }
+
+        // 当選したリストが自動バックアップ
+        function exportCurrentRoundExcel() {
+            if (currentRoundWinners.length === 0) return;
+            try {
+                const currentPrize = CO_CAU_GIAI_THUONG[currentRound];
+                // ファイルの名前: 1_賞の名前.xlsx
+                const safePrizeName = cleanFileName(currentPrize.tenGiai);
+                const fileName = `${currentRound + 1}_${safePrizeName}.xlsx`;
+
+                let roundData = [];
+                currentRoundWinners.forEach(w => {
+                    const parts = w.split(" - ");
+                    roundData.push({ "賞品": currentPrize.tenGiai, "氏名": parts[0], "会社名": parts[1] || "" });
+                });
+
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.json_to_sheet(roundData);
+                XLSX.utils.book_append_sheet(wb, ws, "WinnerList");
+                XLSX.writeFile(wb, fileName);
+            } catch (e) { console.error("Auto-Export Error:", e); }
+        }
+
+        function exportResultsToExcel() {
+            if (FINAL_RESULTS.length === 0) { alert("データがありません！"); return; }
+            const wb = XLSX.utils.book_new();
+            // 日本語に変換
+            const jpResults = FINAL_RESULTS.map(r => ({
+                "賞品": r["Giải Thưởng"],
+                "氏名": r["Họ Tên"],
+                "会社名": r["Công Ty"]
+            }));
+            const ws = XLSX.utils.json_to_sheet(jpResults);
+            XLSX.utils.book_append_sheet(wb, ws, "KetQua");
+            XLSX.writeFile(wb, "Result_All.xlsx");
+        }
+
+        async function connectToDropbox() {
+            try {
+                dropboxHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                const options = { mode: 'readwrite' };
+                if ((await dropboxHandle.queryPermission(options)) === 'granted' || (await dropboxHandle.requestPermission(options)) === 'granted') {
+                    const btn = document.getElementById('btn-dropbox'); btn.innerText = "✅ 当選フォルダーに接続済みです！"; btn.classList.add('connected'); btn.blur();
+                    // alert("Connected!"); //
+                } else { alert("Permission Denied"); }
+            } catch (err) { if (err.name !== 'AbortError') alert("Error: " + err.message); }
+        }
+        async function saveWinnerToTxt(winnerName, winnerCompany, index) {
+            if (!dropboxHandle) return;
+            try {
+                const rawPrizeName = CO_CAU_GIAI_THUONG[currentRound].tenGiai;
+                const safePrize = cleanFileName(rawPrizeName); const safeName = cleanFileName(winnerName);
+                const fileName = `${currentRound + 1}_${safePrize}_${index + 1}_${safeName}.txt`;
+                const fileHandle = await dropboxHandle.getFileHandle(fileName, { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(`${winnerName}\r\n${winnerCompany}\r\n${rawPrizeName}`);
+                await writable.close();
+            } catch (err) { console.error(err); }
+        }
+
+        // UTILS
+        function pullLeverDown() { document.getElementById('lever-up').classList.remove('active'); document.getElementById('lever-down').classList.add('active'); }
+        function pushLeverUp() { document.getElementById('lever-down').classList.remove('active'); document.getElementById('lever-up').classList.add('active'); }
+        function updateMainSlot(text) { if(!text) return; const parts = text.split(" - "); uiMainSlot.innerHTML = `<div class="name">${parts[0]}</div><div class="company">${parts[1]||""}</div>`; }
+        function addToSideList(text, index) {
+            const parts = text.split(" - ");
+            const itemHTML = `<div class="list-item"><div class="l-name">${index + 1}. ${parts[0]}</div><div class="l-comp">${parts[1]||""}</div></div>`;
+            if (index % 2 === 0) { uiListLeft.innerHTML += itemHTML; uiListLeft.scrollTop = uiListLeft.scrollHeight; } 
+            else { uiListRight.innerHTML += itemHTML; uiListRight.scrollTop = uiListRight.scrollHeight; }
+        }
+        function getRandomItems(arr, n) {
+            let result = new Array(n), len = arr.length, taken = new Array(len); if (n > len) return arr;
+            while (n--) { let x = Math.floor(Math.random() * len); result[n] = arr[x in taken ? taken[x] : x]; taken[x] = --len in taken ? taken[len] : len; }
+            return result;
+        }
+
+        // エフェクト
+        const canvas = document.getElementById("confetti-canvas");
+        let ctx = null; let confetti = []; 
+        const colors = ['#f00', '#0f0', '#00f', '#ff0', '#0ff', '#f0f', '#ffd700'];
+        let isConfettiRunning = false;
+        if (canvas) 
+        { 
+            ctx = canvas.getContext("2d"); canvas.width = window.innerWidth; canvas.height = window.innerHeight; window.addEventListener('resize', () => 
+            { 
+                if(canvas) { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+            }); 
+        }
+        function fireConfetti() 
+        {
+            if (!ctx) return;
+            for (let i = 0; i < 150; i++) {
+                confetti.push({
+                    x: Math.random() * canvas.width, y: Math.random() * canvas.height - canvas.height,
+                    w: Math.random() * 10 + 5, h: Math.random() * 5 + 5,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    vy: Math.random() * 5 + 2, vx: Math.random() * 4 - 2, r: Math.random() * 360
+                });
+            }
+            if (!isConfettiRunning) animateConfetti();
+        }
+        function animateConfetti() 
+        {
+            if (!ctx) return;
+            isConfettiRunning = true; ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < confetti.length; i++) {
+                let p = confetti[i]; p.y += p.vy; p.x += p.vx; p.r += 5;
+                ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r * Math.PI / 180);
+                ctx.fillStyle = p.color; ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); ctx.restore();
+                if (p.y > canvas.height) { confetti.splice(i, 1); i--; }
+            }
+            if (confetti.length > 0) requestAnimationFrame(animateConfetti); else isConfettiRunning = false;
+        }
+    </script>
+</body>
+</html>
